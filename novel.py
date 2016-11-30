@@ -1,46 +1,36 @@
+# coding=UTF-8
 import urllib2
 import time
 import re
-import redis
 import os
-
-class novel():
-    def __init__(self, book='', web='http://m.biquge.la'):
-        self.pattern = '<a href=\'(%s/\d+.html)\'>(.+?)</a>'%(book)
-        self.url = web + book
-        self.web = web
-    def get_update(self):
-        try:
-            r = urllib2.urlopen(self.url)
-            html = r.read()
-            url, title = re.findall(self.pattern, html)[0]
-            title = title.decode('gbk').encode('utf-8')
-            return self.web + url, title
-        except Exception, e:
-            print time.ctime(), self.url, e
-            return None, None
+import db
 
 class lee_novel():
 
     def __init__(self, book_url, book_name, check_update_pattern, get_content_pattern):
         self.book_url, self.book_name, self.check_update_pattern, self.get_content_pattern = book_url, book_name, check_update_pattern, get_content_pattern
-        self.r = redis.StrictRedis(host='b.leezypig.com', db=1)
+        #self.r = redis.StrictRedis(host='b.leezypig.com', db=1)
+        novel =db.novel.get()
+        novel.name = self.book_name
+        novel._key_list = ['name']
+        self.urls = []
+        for n in novel:
+            self.urls.append(n.url)
 
     def check_update(self, pattern):
     # return an iterator for update url list
+        print 'checking update ' + self.book_name
         r = urllib2.urlopen(self.book_url)
         html = r.read()
         encoding = self.get_encoding(html)
         for url, title in reversed(re.findall(pattern, html)):
            url = self.book_url + url
-           if self.r.sismember(self.book_name, url):
-               break
-           yield url, title.decode(encoding, 'ignore').encode('utf-8')
-           print url
+           if url not in self.urls:
+               yield url, title.decode(encoding, 'ignore').encode('utf-8')
 
     def process(self):
-        for url, title in self.check_update(self.check_update_pattern):
-            try:
+        try:
+            for url, title in self.check_update(self.check_update_pattern):
                 content = self.get_content(url, self.get_content_pattern)
                 file_path = './books/%s/'%(self.book_name)
                 if not os.path.exists(file_path):
@@ -53,10 +43,10 @@ class lee_novel():
                 f.close()
                 print 'Saved to %s.'%(file_path)
                 os.system("cat '%s' | sendmail jw@qubitlee.com"%(file_path))
-                os.system("cat '%s' | sendmail lee0210@outlook.com"%(file_path))
-                self.r.sadd(self.book_name, url)
-            except Exception, e:
-                print time.ctime(), e
+                #os.system("cat '%s' | sendmail lee0210@outlook.com"%(file_path))
+                #self.r.sadd(self.book_name, url)
+        except Exception, e:
+            print time.ctime(), e
 
     def get_content(self, url, pattern):
     #return title and the content, both are UTF-8
@@ -71,6 +61,21 @@ class lee_novel():
     #return the encoding of the html
         return re.findall('<meta .+?charset=(.+?)[\'\"].*?>', html)[0]
 
+class lee_novel1(lee_novel):
+    def process(self):
+        novel = db.novel.get()
+        print 'processing ' + self.book_name;
+        try:
+            for url, title in self.check_update(self.check_update_pattern):
+                os.system('echo "There is an update available, please check." | mailx -s "%s %s" jw@qubitlee.com'%(self.book_name, title))
+                novel.url = url
+                novel.title = title
+                novel.name = self.book_name
+                novel.write()
+                self.urls.append(url)
+                print 'send mail for %s %s'%(self.book_name, title)
+        except Exception, e:
+            print time.ctime(), e
 
 
 
