@@ -4,11 +4,12 @@ import time
 import re
 import os
 import db
+import traceback
 
 class lee_novel():
 
-    def __init__(self, book_url, book_name, check_update_pattern, get_content_pattern):
-        self.book_url, self.book_name, self.check_update_pattern, self.get_content_pattern = book_url, book_name, check_update_pattern, get_content_pattern
+    def __init__(self, book_url, book_name, check_update_pattern, get_content_pattern, sendmail=True):
+        self.book_url, self.book_name, self.check_update_pattern, self.get_content_pattern, self.sendmail = book_url, book_name, check_update_pattern, get_content_pattern, sendmail
         #self.r = redis.StrictRedis(host='b.leezypig.com', db=1)
         novel =db.novel.get()
         novel.name = self.book_name
@@ -22,9 +23,10 @@ class lee_novel():
         print 'checking update ' + self.book_name
         r = urllib2.urlopen(self.book_url)
         html = r.read()
-        encoding = self.get_encoding(html)
-        for url, title in reversed(re.findall(pattern, html)):
-           url = self.book_url + url
+        #encoding = self.get_encoding(html)
+        encoding = 'UTF-8'
+        for title, url in reversed(re.findall(pattern, html)):
+           url = url
            if url not in self.urls:
                yield url, title.decode(encoding, 'ignore').encode('utf-8')
 
@@ -37,12 +39,12 @@ class lee_novel():
                     os.mkdir(file_path)
                 file_path += title
                 f = open(file_path, 'wb')
-                f.write('Subject: %s %s\n'%(self.book_name, title))
+                f.write('Subject: %s %s\n'%(self.book_name, title.encode('utf8')))
                 f.write('Content-Type: text/html; charset=UTF-8;\n')
                 f.write(content)
                 f.close()
                 print 'Saved to %s.'%(file_path)
-                os.system("cat '%s' | sendmail jw@qubitlee.com"%(file_path))
+                os.system("cat '%s' | sendmail notify@qubitlee.com"%(file_path))
                 #os.system("cat '%s' | sendmail lee0210@outlook.com"%(file_path))
                 #self.r.sadd(self.book_name, url)
         except Exception, e:
@@ -59,7 +61,7 @@ class lee_novel():
         return '<div>%s</div>' % ( contents[0].decode(encoding, 'ignore').encode('utf-8') )
     def get_encoding(self, html):
     #return the encoding of the html
-        return re.findall('<meta .+?charset=(.+?)[\'\"].*?>', html)[0]
+        return re.findall('<meta.+?charset=[\'\"](.+?)[\'\"].*?>', html)[0]
 
 class lee_novel1(lee_novel):
     def process(self):
@@ -67,7 +69,8 @@ class lee_novel1(lee_novel):
         print 'processing ' + self.book_name;
         try:
             for url, title in self.check_update(self.check_update_pattern):
-                os.system('echo "There is an update available, please check." | mailx -s "%s %s" jw@qubitlee.com'%(self.book_name, title))
+                if self.sendmail:
+                    os.system('echo "There is an update available, please check." | mailx -s "%s %s" notify@qubitlee.com'%(self.book_name, title))
                 novel.url = url
                 novel.title = title
                 novel.name = self.book_name
@@ -75,7 +78,7 @@ class lee_novel1(lee_novel):
                 self.urls.append(url)
                 print 'send mail for %s %s'%(self.book_name, title)
         except Exception, e:
-            print time.ctime(), e
+            print time.ctime(), e, traceback.format_exc()
 
 
 
